@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { io, Socket } from "socket.io-client";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,8 +39,6 @@ import { formatFcfa, formatPercent, timeAgo } from "@/lib/format";
 import { toast } from "sonner";
 import type { Opportunity, Notification, PlanInfo } from "@/lib/types";
 
-const WS_PORT = 3003;
-
 export function DashboardView() {
   const user = useApp((s) => s.user);
   const plans = useApp((s) => s.plans);
@@ -50,7 +47,7 @@ export function DashboardView() {
 
   const [ops, setOps] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [connected, setConnected] = useState(false);
+  const [polling, setPolling] = useState(true); // true tant que le polling est actif
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
   // filters
@@ -72,13 +69,15 @@ export function DashboardView() {
   // upgrade modal
   const [upgradeOpen, setUpgradeOpen] = useState(false);
 
-  const socketRef = useRef<Socket | null>(null);
-
   const userPlan = user?.plan;
   const isRealTime = userPlan?.isRealTime ?? false;
   const delaySeconds = userPlan?.delaySeconds ?? 300;
 
-  // REST fallback loader
+  // Garde trace des IDs déjà vus pour détecter les NOUVELLES opportunités chaudes
+  // (et déclencher les notifications toast/push uniquement sur les nouvelles)
+  const seenIdsRef = useRef<Set<string>>(new Set());
+
+  // Loader REST principal (seule source de données — pas de WebSocket)
   const loadFromAPI = useCallback(async () => {
     try {
       const params = new URLSearchParams();
@@ -90,106 +89,56 @@ export function DashboardView() {
       const res = await fetch(`/api/opportunities?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setOps(data.opportunities);
+        const newOps: Opportunity[] = data.opportunities || [];
+
+        // Détecte les opportunités chaudes NOUVELLES (≥3% et pas encore vues)
+        // pour déclencher les notifications toast + Web Push
+        for (const op of newOps) {
+          if (op.profitPercent >= 3 && userPlan?.hasPush && !seenIdsRef.current.has(op.id)) {
+            toast.success(`🔥 Opportunité chaude : ${op.pair} +${op.profitPercent.toFixed(2)}%`, {
+              description: `${op.buyPlatform.name} → ${op.sellPlatform.name}`,
+            });
+            notifShowRef.current({
+              pair: op.pair,
+              profit: op.profitPercent,
+              buyPlatform: op.buyPlatform.name,
+              sellPlatform: op.sellPlatform.name,
+            });
+          }
+          seenIdsRef.current.add(op.id);
+        }
+        // Plafonne la mémoire des IDs vus
+        if (seenIdsRef.current.size > 200) {
+          seenIdsRef.current = new Set(Array.from(seenIdsRef.current).slice(-100));
+        }
+
+        setOps(newOps);
         setLastUpdate(new Date());
+        setPolling(true);
       }
     } catch {
-      /* ignore */
+      setPolling(false);
     } finally {
       setLoading(false);
     }
-  }, [filterPlatform, filterType, filterPair, minProfit]);
+  }, [filterPlatform, filterType, filterPair, minProfit, userPlan?.hasPush]);
 
-  // WebSocket connection
-  useEffect(() => {
-    if (!user) return;
-
-    // Build platform lookup for enriching raw WS opportunities (which only carry codes)
-    const platformMap = new Map(platforms.map((p) => [p.code, p]));
-    const enrich = (op: any): Opportunity => {
-      if (op.buyPlatform && op.sellPlatform) return op as Opportunity;
-      const buy = platformMap.get(op.buyPlatformCode);
-      const sell = platformMap.get(op.sellPlatformCode);
-      return {
-        ...op,
-        buyPlatform: buy
-          ? { code: buy.code, name: buy.name, color: buy.color, logo: buy.logo }
-          : { code: op.buyPlatformCode, name: op.buyPlatformCode, color: "#7c3aed", logo: "?" },
-        sellPlatform: sell
-          ? { code: sell.code, name: sell.name, color: sell.color, logo: sell.logo }
-          : { code: op.sellPlatformCode, name: op.sellPlatformCode, color: "#c026d3", logo: "?" },
-      };
-    };
-
-    const socket = io("/?XTransformPort=" + WS_PORT, {
-      transports: ["websocket", "polling"],
-      reconnection: true,
-      reconnectionDelay: 1500,
-    });
-    socketRef.current = socket;
-
-    socket.on("connect", () => {
-      setConnected(true);
-      socket.emit("subscribe", { plan: userPlan?.code || "DECOUVERTE" });
-    });
-    socket.on("disconnect", () => setConnected(false));
-    socket.on("connect_error", () => setConnected(false));
-
-    socket.on("snapshot", (data: { opportunities: any[] }) => {
-      if (data.opportunities?.length) {
-        setOps((prev) => mergeOps(prev, data.opportunities.map(enrich)));
-        setLastUpdate(new Date());
-        setLoading(false);
-      }
-    });
-
-    socket.on("opportunity", (rawOp: any) => {
-      const op = enrich(rawOp);
-      // Apply plan delay filter client-side: Découverte users see ops with delay
-      if (delaySeconds > 0) {
-        const age = (Date.now() - new Date(op.createdAt).getTime()) / 1000;
-        if (age < delaySeconds) return; // hide too-fresh ops
-      }
-      // Plan gating: hide ops requiring a higher plan
-      if (op.requiresPlan === "PRO" && (userPlan?.code === "DECOUVERTE" || !userPlan)) return;
-      if (op.requiresPlan === "INSTITUTIONNEL" && userPlan?.code !== "INSTITUTIONNEL") return;
-      if (op.type === "P2P" && !userPlan?.hasP2PFiat) return;
-
-      // Hot opportunity notification (toast in-app + Web Push native si activé)
-      if (op.profitPercent >= 3 && userPlan?.hasPush) {
-        toast.success(`🔥 Opportunité chaude : ${op.pair} +${op.profitPercent.toFixed(2)}%`, {
-          description: `${op.buyPlatform.name} → ${op.sellPlatform.name}`,
-        });
-        // Notification native (Web Push) — ne s'affiche que si l'onglet est caché
-        notifShowRef.current({
-          pair: op.pair,
-          profit: op.profitPercent,
-          buyPlatform: op.buyPlatform.name,
-          sellPlatform: op.sellPlatform.name,
-        });
-      }
-
-      setOps((prev) => mergeOps([op], prev).slice(0, 50));
-      setLastUpdate(new Date());
-    });
-
-    return () => {
-      socket.disconnect();
-      socketRef.current = null;
-    };
-  }, [user?.id, userPlan?.code, delaySeconds, userPlan?.hasP2PFiat, userPlan?.hasPush, userPlan, platforms]);
-
-  // REST fallback: load initially and periodically when WS not connected
+  // Polling REST : 4s en temps réel (plan Pro+), 15s en Découverte.
+  // L'API lit le cache chauffé par le cron Vercel (warm-cache) → pas de surcoût.
   useEffect(() => {
     if (!user) return;
     loadFromAPI();
-    const interval = setInterval(() => {
-      if (!connected) loadFromAPI();
-    }, isRealTime ? 4000 : 15000);
+    const intervalMs = isRealTime ? 4000 : 15000;
+    const interval = setInterval(loadFromAPI, intervalMs);
     return () => clearInterval(interval);
-  }, [user, connected, loadFromAPI, isRealTime]);
+  }, [user, loadFromAPI, isRealTime]);
 
-  // Re-apply filters when changed (client-side on top of WS data)
+  // Re-fetch immédiat quand les filtres changent (pas besoin d'attendre le prochain tick)
+  useEffect(() => {
+    if (user) loadFromAPI();
+  }, [filterPlatform, filterType, filterPair, minProfit, user, loadFromAPI]);
+
+  // Re-apply filters when changed (client-side sur les données polling)
   const filteredOps = ops.filter((op) => {
     if (filterPlatform !== "ALL" && op.buyPlatformCode !== filterPlatform && op.sellPlatformCode !== filterPlatform) return false;
     if (filterType !== "ALL" && op.type !== filterType) return false;
@@ -253,9 +202,9 @@ export function DashboardView() {
 
         <div className="flex items-center gap-2">
           {/* Connection status */}
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${connected ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"}`}>
-            {connected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-            {connected ? (isRealTime ? "Temps réel" : `Retard ${delaySeconds}s`) : "Reconnexion…"}
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${polling ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"}`}>
+            {polling ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
+            {polling ? (isRealTime ? `Live · ${4}s` : `Retard ${delaySeconds / 60}min`) : "Reconnexion…"}
           </div>
 
           {/* Notifications */}
@@ -486,18 +435,6 @@ export function DashboardView() {
       <UpgradeModal open={upgradeOpen} onOpenChange={setUpgradeOpen} plans={plans} currentPlanCode={planCode} />
     </div>
   );
-}
-
-function mergeOps(incoming: Opportunity[], existing: Opportunity[]): Opportunity[] {
-  const map = new Map<string, Opportunity>();
-  for (const op of existing) map.set(op.id, op);
-  for (const op of incoming) map.set(op.id, op);
-  // sort by createdAt desc, prune expired
-  const now = Date.now();
-  return Array.from(map.values())
-    .filter((op) => new Date(op.expiresAt).getTime() > now)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 50);
 }
 
 function RealDataBanner({ ops }: { ops: Opportunity[] }) {

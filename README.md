@@ -32,7 +32,7 @@ Plateforme SaaS (PWA) qui détecte et centralise les opportunités d'arbitrage c
 | Base de données | Neon PostgreSQL (serverless) |
 | ORM | Prisma 6 |
 | Auth | Sessions en DB (cookie httpOnly, hashing scrypt) |
-| Temps réel | Socket.IO (mini-service séparé, optionnel) |
+| Temps réel | Polling REST optimisé (4s Pro / 15s Découverte) + cron Vercel cache warming |
 | Thème | next-themes (dark/light) |
 | Notifications | Web Push API + Service Worker |
 | icônes | Lucide React |
@@ -93,19 +93,15 @@ bun run prisma/seed.ts
 
 Le fichier `vercel.json` définit un cron qui appelle `/api/cron/warm-cache` toutes les minutes pour maintenir le cache des prix à jour en serverless. Dans Vercel → Settings → Cron Jobs, vérifiez que le cron est bien détecté. Le secret (`CRON_SECRET`) doit correspondre entre la variable d'environnement et le paramètre `secret` de l'URL du cron.
 
-### 6. (Optionnel) Déployer le mini-service WebSocket
+### 6. Temps réel (déjà inclus, sans service séparé)
 
-Le temps réel WebSocket (mini-service `opportunity-feed`) nécessite un processus persistant, incompatible avec Vercel serverless. Sans lui, le dashboard bascule automatiquement sur du polling REST (toutes les 4-15s selon le plan), ce qui reste fonctionnel.
+Le dashboard utilise un **polling REST optimisé** comme mécanisme principal de temps réel :
+- **Plan Pro+** : rafraîchissement toutes les **4 secondes** (latence imperceptible pour un humain)
+- **Plan Découverte** : toutes les **15 secondes**
 
-Pour le vrai temps réel, déployez le mini-service séparément sur [Render](https://render.com), [Railway](https://railway.app) ou [Fly.io](https://fly.io) :
+Le cron Vercel `warm-cache` (étape 5) maintient le cache des prix à jour toutes les minutes côté serveur, donc chaque requête du dashboard lit directement le cache — **zéro surcoût, zéro latence API externe**. Aucun service WebSocket persistant à déployer, aucune complexité, 100% gratuit.
 
-```bash
-cd mini-services/opportunity-feed
-# Déployez ce dossier sur Render/Railway avec la commande: bun run dev
-# Le service expose le port 3003
-```
-
-Puis configurez votre proxy/gateway pour exposer ce service avec le paramètre `XTransformPort=3003`.
+> ℹ️ Le code du mini-service WebSocket (`mini-services/opportunity-feed/`) est conservé dans le repo pour référence, mais **n'est plus utilisé** par défaut. Si vous souhaitez un jour du vrai temps réel push (sub-seconde), vous pouvez le déployer séparément sur [Render free](https://render.com) avec un cron keep-alive — voir le commentaire en tête du fichier.
 
 ---
 
@@ -127,13 +123,9 @@ bun run prisma/seed.ts
 
 # 4. Démarrer le serveur de dev
 bun run dev
-
-# 5. (Optionnel) Démarrer le mini-service WebSocket en parallèle
-cd mini-services/opportunity-feed
-bun install && bun run dev
 ```
 
-L'app tourne sur `http://localhost:3000`, le mini-service sur `http://localhost:3003`.
+L'app tourne sur `http://localhost:3000`. Le dashboard interroge `/api/opportunities` toutes les 4-15s (polling REST), qui lit le cache en mémoire des prix de marché réels.
 
 ### Comptes de démonstration (après seed)
 
