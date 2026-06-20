@@ -76,6 +76,8 @@ export type Opportunity = {
   createdAt: string;
   buyPlatform: { code: string; name: string; color: string; logo: string };
   sellPlatform: { code: string; name: string; color: string; logo: string };
+  realData?: boolean;
+  simulated?: boolean;
 };
 
 export type Notification = {

@@ -6,17 +6,33 @@ import { dirname, resolve } from "path";
 const PORT = 3003;
 const __dirname = dirname(new URL(import.meta.url).pathname);
 
-// Import shared engine from the main app
-const enginePath = resolve(__dirname, "../../src/lib/opportunity-engine.ts");
-const constantsPath = resolve(__dirname, "../../src/lib/constants.ts");
+// Import shared modules from the main app
+const fetcherPath = resolve(__dirname, "../../src/lib/exchange-fetcher.ts");
+const calcPath = resolve(__dirname, "../../src/lib/arbitrage-calculator.ts");
 
-const { generateOpportunity, pushOpportunity, getHistory, pruneExpired, ensureSeeded } =
-  await import(pathToFileURL(enginePath).href);
+const exchangeFetcher = await import(pathToFileURL(fetcherPath).href);
+const arbitrageCalc = await import(pathToFileURL(calcPath).href);
+
+const { fetchMarketSnapshot, getLatestSnapshot } = exchangeFetcher;
+const { computeRealOpportunities, getScraperHealth } = arbitrageCalc;
+
+// Import simulation fallback (for when network is down)
+const enginePath = resolve(__dirname, "../../src/lib/opportunity-engine.ts");
+const { generateOpportunity } = await import(pathToFileURL(enginePath).href);
 
 const httpServer = createServer((req, res) => {
   if (req.url === "/health") {
+    const snapshot = getLatestSnapshot();
+    const health = getScraperHealth(snapshot);
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ ok: true, service: "opportunity-feed", port: PORT, connections: io.engine.clientsCount }));
+    res.end(JSON.stringify({
+      ok: true,
+      service: "opportunity-feed",
+      port: PORT,
+      connections: io.engine.clientsCount,
+      scraper: health,
+      mode: snapshot ? "REAL_DATA" : "WARMING_UP",
+    }));
     return;
   }
   res.writeHead(200, { "content-type": "text/plain" });
@@ -28,57 +44,87 @@ const io = new Server(httpServer, {
   allowEIO3: true,
 });
 
-// Seed initial history so newly connected clients see data immediately
-ensureSeeded();
+// ===== ÉTAT EN MÉMOIRE (cache — 100 users lisent le cache, pas 100 req vers Binance) =====
+let currentOpportunities: any[] = [];
+let lastFetchOk = false;
+let consecutiveErrors = 0;
+const MAX_HISTORY = 60;
 
-const ACTIVE_CLIENTS = new Set();
+// ===== FONCTION DE SCRAPING FURTIF =====
+async function scrapeAndBroadcast() {
+  const jitter = 12000 + Math.random() * 16000; // 12s — 28s (cahier des charges)
+  try {
+    console.log(`[scraper] fetching real market data… (jitter next: ${Math.round(jitter / 1000)}s)`);
+    const snapshot = await fetchMarketSnapshot();
+    const realOps = computeRealOpportunities(snapshot);
 
+    if (realOps.length > 0) {
+      // Fusionne avec l'historique (garde les anciennes tant qu'elles ne sont pas expirées)
+      const now = Date.now();
+      currentOpportunities = [...realOps, ...currentOpportunities]
+        .filter((op) => new Date(op.expiresAt).getTime() > now)
+        .slice(0, MAX_HISTORY);
+
+      lastFetchOk = true;
+      consecutiveErrors = 0;
+
+      // Broadcast les nouvelles opportunités réelles
+      for (const op of realOps) {
+        io.emit("opportunity", { ...op, realData: true });
+      }
+      // Snapshot rafraîchi
+      io.emit("snapshot", { opportunities: currentOpportunities.slice(0, 30), serverTime: Date.now(), realData: true });
+      console.log(`[scraper] ✓ ${realOps.length} real opportunities broadcast (sources: ${snapshot.sources.join(",")})`);
+    } else {
+      console.log("[scraper] no real opportunities this cycle (spreads too small or negative)");
+    }
+  } catch (e) {
+    consecutiveErrors++;
+    lastFetchOk = false;
+    console.error(`[scraper] ✗ error (${consecutiveErrors}):`, String(e).slice(0, 100));
+    // Fallback : génère une opportunité simulée pour ne pas laisser le flux vide
+    if (consecutiveErrors > 2) {
+      const sim = generateOpportunity(new Date());
+      currentOpportunities = [sim, ...currentOpportunities].slice(0, MAX_HISTORY);
+      io.emit("opportunity", { ...sim, realData: false, simulated: true });
+      console.log("[scraper] fallback: 1 simulated opportunity emitted");
+    }
+  }
+
+  // Prochain cycle avec jitter
+  setTimeout(scrapeAndBroadcast, jitter);
+}
+
+// ===== CONNEXIONS CLIENTS =====
 io.on("connection", (socket) => {
-  ACTIVE_CLIENTS.add(socket.id);
-  console.log(`[+] client connected (${socket.id}) — total ${ACTIVE_CLIENTS.size}`);
-
-  // Send current snapshot immediately
-  socket.emit("snapshot", { opportunities: getHistory().slice(0, 30), serverTime: Date.now() });
-
-  // Client can subscribe with a plan filter
-  socket.on("subscribe", (payload) => {
-    const plan = (payload?.plan || "DECOUVERTE").toUpperCase();
-    socket.data.plan = plan;
-    socket.emit("subscribed", { plan });
+  console.log(`[+] client connected (${socket.id}) — total ${io.engine.clientsCount}`);
+  // Envoie le snapshot courant immédiatement
+  socket.emit("snapshot", {
+    opportunities: currentOpportunities.slice(0, 30),
+    serverTime: Date.now(),
+    realData: lastFetchOk,
   });
 
-  socket.on("ping", () => socket.emit("pong", { t: Date.now() }));
+  socket.on("subscribe", (payload) => {
+    socket.data.plan = payload?.plan || "DECOUVERTE";
+    socket.emit("subscribed", { plan: socket.data.plan, realData: lastFetchOk });
+  });
+
+  socket.on("ping", () => socket.emit("pong", { t: Date.now(), realData: lastFetchOk }));
 
   socket.on("disconnect", () => {
-    ACTIVE_CLIENTS.delete(socket.id);
-    console.log(`[-] client disconnected (${socket.id}) — total ${ACTIVE_CLIENTS.size}`);
+    console.log(`[-] client disconnected (${socket.id}) — total ${io.engine.clientsCount}`);
   });
 });
 
-// Tick: generate new opportunities on a jittered interval (anti-pattern, simule scraping furtif)
-function scheduleNext() {
-  const jitter = 2500 + Math.random() * 4000; // 2.5s — 6.5s
-  setTimeout(() => {
-    pruneExpired();
-    // generate 1-3 opportunities per tick
-    const count = Math.random() > 0.6 ? 2 : 1;
-    for (let i = 0; i < count; i++) {
-      const op = generateOpportunity(new Date());
-      pushOpportunity(op);
-      io.emit("opportunity", op);
-    }
-    // periodically broadcast a refreshed snapshot so clients resync
-    if (Math.random() > 0.7) {
-      io.emit("snapshot", { opportunities: getHistory().slice(0, 30), serverTime: Date.now() });
-    }
-    scheduleNext();
-  }, jitter);
-}
-
+// ===== DÉMARRAGE =====
 httpServer.listen(PORT, () => {
   console.log(`🌙 ArbiTech opportunity feed running on port ${PORT}`);
+  console.log(`   Mode: REAL DATA SCRAPER (Binance, Bybit, OKX, KuCoin + Binance P2P FCFA)`);
+  console.log(`   Furtif: jitter 12-28s, rotation User-Agents, mise en cache`);
   console.log(`   health: http://localhost:${PORT}/health`);
-  scheduleNext();
+  // Premier cycle immédiat, puis jitter
+  scrapeAndBroadcast();
 });
 
 process.on("SIGINT", () => {

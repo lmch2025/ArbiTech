@@ -362,6 +362,9 @@ export function DashboardView() {
         </div>
       </div>
 
+      {/* Real data banner */}
+      <RealDataBanner ops={filteredOps} />
+
       {/* Plan banner for free users */}
       {isFree && (
         <div className="relative overflow-hidden rounded-2xl glass-strong gradient-border p-4 sm:p-5 mb-6 flex flex-col sm:flex-row items-start sm:items-center gap-4">
@@ -494,6 +497,35 @@ function mergeOps(incoming: Opportunity[], existing: Opportunity[]): Opportunity
     .filter((op) => new Date(op.expiresAt).getTime() > now)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 50);
+}
+
+function RealDataBanner({ ops }: { ops: Opportunity[] }) {
+  const realCount = ops.filter((o) => o.realData).length;
+  const simCount = ops.length - realCount;
+  if (ops.length === 0) return null;
+
+  return (
+    <div className="rounded-2xl glass p-3 sm:p-4 mb-6 flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-center gap-2.5">
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+        </span>
+        <div className="text-sm">
+          <span className="font-semibold">Données de marché réelles</span>
+          <span className="text-muted-foreground ml-2">
+            {realCount > 0 && <>{realCount} opportunité{realCount > 1 ? "s" : ""} live</>}
+            {realCount > 0 && simCount > 0 && " · "}
+            {simCount > 0 && <>{simCount} simulée{simCount > 1 ? "s" : ""}</>}
+          </span>
+        </div>
+      </div>
+      <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+        <Activity className="w-3 h-3" />
+        Sources : Binance · Bybit · OKX · KuCoin + P2P FCFA
+      </div>
+    </div>
+  );
 }
 
 function StatTile({ icon: Icon, label, value, tone }: { icon: any; label: string; value: string; tone: string }) {

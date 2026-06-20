@@ -46,6 +46,11 @@ export function OpportunityCard({
               🔥 Chaud
             </Badge>
           )}
+          {op.realData === true && (
+            <Badge className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/30" title="Issue des APIs publiques réelles de Binance, Bybit, OKX, KuCoin">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 live-dot mr-1" /> Live
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
           <Clock className="w-3 h-3" />
