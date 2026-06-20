@@ -62,10 +62,10 @@ export function SiteFooter() {
           <div>
             <h3 className="font-semibold mb-3 text-sm uppercase tracking-wide text-muted-foreground">Légal & Aide</h3>
             <ul className="space-y-2 text-sm">
-              <li><a href="#" className="hover:text-primary transition-colors">Conditions d'utilisation</a></li>
-              <li><a href="#" className="hover:text-primary transition-colors">Confidentialité</a></li>
-              <li><a href="#" className="hover:text-primary transition-colors">Support</a></li>
-              <li><a href="#" className="hover:text-primary transition-colors">Avertissement risque</a></li>
+              <li><button onClick={() => setView("legal")} className="hover:text-primary transition-colors">Conditions d'utilisation</button></li>
+              <li><button onClick={() => setView("legal")} className="hover:text-primary transition-colors">Confidentialité</button></li>
+              <li><button onClick={() => setView("legal")} className="hover:text-primary transition-colors">Support</button></li>
+              <li><button onClick={() => setView("legal")} className="hover:text-primary transition-colors">Avertissement risque</button></li>
             </ul>
           </div>
         </div>

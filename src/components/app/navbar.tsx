@@ -22,6 +22,7 @@ import {
   Gift,
   LogOut,
   User as UserIcon,
+  UserCircle,
   Sun,
   Moon,
   Zap,
@@ -135,6 +136,9 @@ export function Navbar() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setView("dashboard")}>
                     <LayoutDashboard className="w-4 h-4 mr-2" /> Tableau de bord
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setView("profile")}>
+                    <UserCircle className="w-4 h-4 mr-2" /> Mon compte
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setView("ambassador")}>
                     <Gift className="w-4 h-4 mr-2" /> Gagner en parrainant

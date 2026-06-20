@@ -141,3 +141,58 @@ Stage Summary:
 - Le blog contient 6 articles substantiels riches en mots-clés du cahier des charges (arbitrage crypto FCFA, P2P Binance, comparateur USDT).
 - Les outils sont interactifs et gratuits (sans inscription).
 - SEO renforcé : sitemap.xml + JSON-LD Blog/BlogPosting + contenu sémantique H1/H2 dans les articles.
+
+---
+Task ID: 2-a
+Agent: general-purpose
+Task: Build the Profile / Settings view (`src/components/app/views/profile-view.tsx`) for ArbiTech — a complete account management page (profile edit, password change, subscription, notifications, ambassador referral, danger zone) as a single React client component, following the Aurora/Amethyst theme.
+
+Work Log:
+- Read `worklog.md`, `lib/store.ts`, `lib/types.ts`, `lib/format.ts`, `lib/constants.ts`, `app/globals.css`, `app/api/subscription/route.ts`, `app/api/subscription/cancel/route.ts`, `app/api/auth/update-profile/route.ts`, `app/api/auth/change-password/route.ts`, `app-shell.tsx`, `pricing-view.tsx`, `auth-view.tsx`, and shadcn UI primitives (button, input, label, badge, separator, switch, alert-dialog, card) to align with exact APIs, store selectors, and design conventions.
+- Wrote a single ~700-line file `src/components/app/views/profile-view.tsx` with `"use client"` directive.
+- Store selectors used: `user`, `setView`, `logout`, `refreshUser` (and `plans` available but not needed here).
+- Auth gate: if `user` is null, renders a friendly glass card with a CTA to log in (`setView("auth")`) plus a back-to-home button.
+- Sections (stacked vertically, no tabs):
+  1. **Header** — "Mon compte" gradient title, back-to-home button, avatar (initials in violet→fuchsia→teal gradient tile), name, email, plan badge (teal/violet/fuchsia per code), admin badge if applicable, referral code chip.
+  2. **Informations personnelles** — form with name (required), phone (optional), email (read-only + lock hint). PATCH `/api/auth/update-profile`. Toast feedback + `refreshUser()` after success.
+  3. **Sécurité — Changer le mot de passe** — form with currentPassword, newPassword, confirmPassword. Client-side validation (≥6 chars, match confirm) with inline error hint. POST `/api/auth/change-password`. Fields cleared on success.
+  4. **Mon abonnement** — fetches GET `/api/subscription` with a skeleton loader while pending. Active subscription card shows plan name, status badge (emerald/amber/rose with live-dot), billing cycle, amount (formatFcfa), start/end dates (fr-FR), days remaining + `timeUntil()`, and an "Annuler l'abonnement" button opening an AlertDialog warning about reverting to free plan. If no active sub: "Vous êtes au plan gratuit" card with a note about past sub (if any) + "Voir les forfaits" button → `setView("pricing")`. After cancel: `refreshUser()` + reload subscription.
+  5. **Préférences de notifications** — three Switch toggles (push, email, sound) persisted to `localStorage` key `arbitech_notif_prefs`. Push toggle shows a small amber "Pro+" lock hint when user is on free plan but still allows toggling the preference. Toast on each change.
+  6. **Programme ambassadeur** — card with referral code (mono, aurora-warm gradient), referral link preview, copy button (navigator.clipboard + toast), and "Voir mon tableau ambassadeur" button → `setView("ambassador")`.
+  7. **Zone de danger** — subtle (non-destructive) logout button (calls store `logout()` + toast) and a "Supprimer mon compte" button opening an AlertDialog stating "Cette action est irréversible" → placeholder toast "Contactez le support pour supprimer votre compte".
+- Helpers added: `planBadge`, `planIcon`, `statusBadge`, `fmtDate`, `initialsOf`, `daysUntil`. Sub-components: `SectionHeader`, `SubscriptionSkeleton`, `ActiveSubscriptionCard`, `FreePlanCard`, `InfoTile`, `NotifRow`.
+- Design system compliance: strict Aurora/Amethyst theme — violet, fuchsia, magenta, teal, emerald, amber, rose only (NO indigo/blue). Used `glass`, `glass-strong`, `gradient-border`, `glow-soft`, `text-aurora`, `text-aurora-warm`, `animate-rise`, `live-dot`. Container `container mx-auto max-w-4xl px-4 sm:px-6 py-8`. French throughout, warm tone. Semantic HTML (`<section>`, `<header>`, `<h1>`, `<h2>` with `aria-labelledby`).
+- shadcn components used: Button, Input, Label, Badge, Separator, Switch, AlertDialog (+ Action/Cancel/Content/Description/Footer/Header/Title).
+- Fully responsive (grid collapses, flex-wrap on badges, sm:flex-row layouts). Loading spinners via `Loader2` animate-spin. All dates formatted with `toLocaleDateString("fr-FR")`.
+
+Stage Summary:
+- File written: `/home/z/my-project/src/components/app/views/profile-view.tsx` (single file, ~700 lines).
+- Lint: `bun run lint` clean — zero errors in profile-view.tsx (no pre-existing errors regressed).
+- TypeScript: `tsc --noEmit` shows zero errors in profile-view.tsx (pre-existing errors in `page.tsx`, `floating-share.tsx`, `opportunity-service.ts`, and example/skill files left untouched per instructions).
+- No other files modified, no test files created.
+- Next actions: orchestrator (Task 2) needs to add `"profile"` to the `View` type in `lib/types.ts`, register `ProfileView` in `app-shell.tsx`, and wire a navbar entry (e.g. avatar dropdown → "Mon compte") to navigate via `setView("profile")`. The view itself only uses already-valid `setView` targets (`auth`, `pricing`, `ambassador`, `landing`).
+
+---
+Task ID: EXTRA-2
+Agent: orchestrator (Z.ai Code) + sous-agent (2-a, profile-view)
+Task: Implémenter 3 fonctionnalités restantes — pages légales, notifications Web Push réelles, espace profil/paramètres.
+
+Work Log:
+- Créé 3 API routes : PATCH /api/auth/update-profile (nom, téléphone), POST /api/auth/change-password (vérifie ancien + hash nouveau), POST /api/subscription/cancel (annule abonnement + rétrograde au plan gratuit + notif).
+- Sous-agent 2-a a construit profile-view.tsx (~700 lignes) : header avec avatar/badge plan, informations personnelles (édition), sécurité (changement mot de passe), abonnement (détails + annulation AlertDialog), préférences notifications (3 toggles localStorage), programme ambassadeur (code + lien + copie), zone de danger (déconnexion + suppression compte).
+- Créé lib/legal-content.ts : 4 documents légaux complets (Conditions d'utilisation 9 sections, Confidentialité 8 sections, Avertissement risques 7 sections, Support 6 sections) — contenu clair sans jargon juridique inutile.
+- Créé legal-view.tsx : index des 4 documents (cards avec icônes gradient) + vue détail par document (sectionnée, avec date de maj). Navigation via ?doc=slug dans l'URL.
+- Remplacé tous les liens `#` du footer par des boutons réels naviguant vers la vue légale.
+- Créé use-notifications.ts (hook) : gestion permission Notification, toggle push/sound, showOpportunity() qui affiche une notification native via le Service Worker quand l'onglet est caché, son via Web Audio API, préférences persistées en localStorage.
+- Intégré les notifications dans dashboard-view : bouton toggle push (BellOff/BellRing) + bouton son (VolumeX/Volume2) dans le header. Gating plan Pro (lock hint pour free users → ouvre modal upgrade). Appel showOpportunity via ref (évite reconnect socket). Notifications natives déclenchées pour opportunités ≥3% quand push activé.
+- Ajouté "profile" et "legal" au type View, app-shell (imports + rendus + guard), navbar (entrée "Mon compte" avec UserCircle dans le menu avatar).
+- Mis à jour sitemap.ts : 10 URLs (5 original + 5 pages légales).
+- Vérifié via Agent Browser : vue légale (4 documents + lecture), vue profil (login demo → profil s'affiche avec toutes les sections), dashboard (bouton notifications push présent et cliquable), footer (liens légaux naviguent correctement).
+- Lint clean, sitemap 10 URLs, services OK.
+
+Stage Summary:
+- 3 fonctionnalités livrées : pages légales complètes, notifications Web Push natives, espace profil/paramètres.
+- Tous les liens placeholder `#` du footer sont remplacés par des vraies navigations.
+- Les notifications Web Push fonctionnent réellement (SW showNotification) pour les utilisateurs Pro+ quand l'onglet est en arrière-plan.
+- L'espace profil permet édition, changement mot de passe, gestion abonnement (annulation), préférences notifications.
+- Sitemap enrichi (10 URLs) pour le SEO.

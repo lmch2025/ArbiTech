@@ -30,9 +30,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { OpportunityCard } from "@/components/app/opportunity-card";
+import { useNotifications } from "@/hooks/use-notifications";
 import {
-  Zap, Bell, Filter, Search, RefreshCw, Wifi, WifiOff, TrendingUp, Crown,
-  Check, Sparkles, Clock, Lock, Gift, ChevronRight, Activity, X, BellRing,
+  Zap, Bell, BellOff, BellRing, Filter, Search, RefreshCw, Wifi, WifiOff, TrendingUp, Crown,
+  Check, Sparkles, Clock, Lock, Gift, ChevronRight, Activity, X, Volume2, VolumeX,
 } from "lucide-react";
 import { formatFcfa, formatPercent, timeAgo } from "@/lib/format";
 import { toast } from "sonner";
@@ -58,10 +59,14 @@ export function DashboardView() {
   const [minProfit, setMinProfit] = useState<string>("0");
   const [showFilters, setShowFilters] = useState(false);
 
-  // notifications
+  // notifications (in-app bell + Web Push natives)
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
+  const notif = useNotifications();
+  // Ref pour accéder à la dernière version de showOpportunity sans reconnecter le socket
+  const notifShowRef = useRef(notif.showOpportunity);
+  notifShowRef.current = notif.showOpportunity;
 
   // upgrade modal
   const [upgradeOpen, setUpgradeOpen] = useState(false);
@@ -149,10 +154,17 @@ export function DashboardView() {
       if (op.requiresPlan === "INSTITUTIONNEL" && userPlan?.code !== "INSTITUTIONNEL") return;
       if (op.type === "P2P" && !userPlan?.hasP2PFiat) return;
 
-      // Hot opportunity notification
+      // Hot opportunity notification (toast in-app + Web Push native si activé)
       if (op.profitPercent >= 3 && userPlan?.hasPush) {
         toast.success(`🔥 Opportunité chaude : ${op.pair} +${op.profitPercent.toFixed(2)}%`, {
           description: `${op.buyPlatform.name} → ${op.sellPlatform.name}`,
+        });
+        // Notification native (Web Push) — ne s'affiche que si l'onglet est caché
+        notifShowRef.current({
+          pair: op.pair,
+          profit: op.profitPercent,
+          buyPlatform: op.buyPlatform.name,
+          sellPlatform: op.sellPlatform.name,
         });
       }
 
@@ -288,6 +300,60 @@ export function DashboardView() {
               </div>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Push notifications toggle (Web Push natif) */}
+          {notif.mounted && notif.supported && (
+            <Button
+              variant="outline"
+              size="icon"
+              className={notif.pushEnabled ? "border-emerald-500/40 text-emerald-400" : ""}
+              title={
+                !userPlan?.hasPush
+                  ? "Notifications push — réservé au plan Pro"
+                  : notif.pushEnabled
+                    ? "Notifications push activées — cliquez pour désactiver"
+                    : "Activer les notifications push (opportunités chaudes)"
+              }
+              onClick={async () => {
+                if (!userPlan?.hasPush) {
+                  toast.info("Les notifications push sont réservées au plan Pro.", {
+                    description: "Passez au plan Pro pour être prévenu même quand l'app est en arrière-plan.",
+                  });
+                  setUpgradeOpen(true);
+                  return;
+                }
+                if (notif.pushEnabled) {
+                  notif.disablePush();
+                  toast.success("Notifications push désactivées.");
+                } else {
+                  const ok = await notif.enablePush();
+                  if (ok) {
+                    toast.success("Notifications push activées ! 🎉", {
+                      description: "Vous serez prévenu des opportunités chaudes même en arrière-plan.",
+                    });
+                  } else {
+                    toast.error("Permission refusée. Autorisez les notifications dans votre navigateur.");
+                  }
+                }
+              }}
+            >
+              {notif.pushEnabled ? <BellRing className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
+              {!userPlan?.hasPush && <Lock className="w-2.5 h-2.5 absolute -bottom-0.5 -right-0.5" />}
+            </Button>
+          )}
+
+          {/* Sound toggle */}
+          {notif.mounted && notif.pushEnabled && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground"
+              title={notif.soundEnabled ? "Désactiver le son" : "Activer le son à la nouvelle opportunité"}
+              onClick={notif.toggleSound}
+            >
+              {notif.soundEnabled ? <Volume2 className="w-4 h-4 text-amber-400" /> : <VolumeX className="w-4 h-4" />}
+            </Button>
+          )}
 
           {/* Refresh */}
           <Button variant="outline" size="icon" onClick={loadFromAPI} title="Rafraîchir">
