@@ -75,21 +75,87 @@ export function useNotifications() {
     }
   }, []);
 
+  /**
+   * Active les notifications push :
+   * 1. Demande la permission Notification
+   * 2. Récupère la clé publique VAPID depuis l'API
+   * 3. S'abonne via PushManager.subscribe (applicationServerKey = VAPID publique)
+   * 4. Enregistre l'abonnement côté serveur (POST /api/notifications/subscribe)
+   */
   const enablePush = useCallback(async (): Promise<boolean> => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      return false;
+    }
     const granted = await requestPermission();
-    if (granted) {
+    if (!granted) return false;
+
+    try {
+      // Récupère la clé VAPID publique
+      const vapidRes = await fetch("/api/notifications/vapid-public");
+      const vapidData = await vapidRes.json();
+      if (!vapidData.publicKey) {
+        console.error("[push] VAPID public key manquante côté serveur");
+        return false;
+      }
+
+      // Convertit la clé VAPID (base64url) en ArrayBuffer pour applicationServerKey
+      const applicationServerKey = urlBase64ToUint8Array(vapidData.publicKey);
+
+      // Récupère le service worker et s'abonne
+      const reg = (await navigator.serviceWorker.getRegistration("/sw.js")) || (await navigator.serviceWorker.register("/sw.js"));
+      swRef.current = reg;
+      const subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true, // obligatoire : les notifs doivent être visibles
+        applicationServerKey,
+      });
+
+      // Enregistre l'abonnement côté serveur
+      const subJson = subscription.toJSON();
+      await fetch("/api/notifications/subscribe", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          endpoint: subJson.endpoint,
+          keys: subJson.keys,
+        }),
+      });
+
       const newPrefs = { ...prefs, pushEnabled: true };
       setPrefs(newPrefs);
       savePrefs(newPrefs);
       return true;
+    } catch (err) {
+      console.error("[push] subscribe error:", err);
+      return false;
     }
-    return false;
   }, [prefs, requestPermission]);
 
-  const disablePush = useCallback(() => {
+  /**
+   * Désactive les notifications push :
+   * 1. Récupère l'abonnement actuel
+   * 2. Se désabonne du PushManager
+   * 3. Notifie le serveur (POST /api/notifications/unsubscribe)
+   */
+  const disablePush = useCallback(async () => {
     const newPrefs = { ...prefs, pushEnabled: false };
     setPrefs(newPrefs);
     savePrefs(newPrefs);
+
+    try {
+      if (swRef.current) {
+        const sub = await swRef.current.pushManager.getSubscription();
+        if (sub) {
+          await sub.unsubscribe();
+          await fetch("/api/notifications/unsubscribe", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ endpoint: sub.endpoint }),
+          });
+        }
+      }
+    } catch (err) {
+      console.error("[push] unsubscribe error:", err);
+    }
   }, [prefs]);
 
   const toggleSound = useCallback(() => {
@@ -157,11 +223,25 @@ export function useNotifications() {
     permission,
     pushEnabled: prefs.pushEnabled,
     soundEnabled: prefs.soundEnabled,
-    supported: typeof window !== "undefined" && "Notification" in window,
+    supported: typeof window !== "undefined" && "Notification" in window && "PushManager" in window,
     requestPermission,
     enablePush,
     disablePush,
     toggleSound,
     showOpportunity,
   };
+}
+
+/**
+ * Convertit une clé publique VAPID base64url en ArrayBuffer (requis par PushManager.subscribe).
+ */
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = typeof atob !== "undefined" ? atob(base64) : "";
+  const output = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    output[i] = rawData.charCodeAt(i);
+  }
+  return output;
 }

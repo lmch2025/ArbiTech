@@ -8,7 +8,8 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL", env("DATABASE_URL"))
+  directUrl = env("DIRECT_URL")
+  
 }
 
 model User {
@@ -31,7 +32,8 @@ model User {
   subscription  Subscription?
   earnings      AmbassadorEarning[] @relation("Earner")
   payouts       AmbassadorEarning[] @relation("Referrer")
-  notifications Notification[]
+  notifications      Notification[]
+  pushSubscriptions  PushSubscription[]
   sessions      Session[]
 }
 
@@ -177,4 +179,18 @@ model AmbassadorConfig {
   minPayout       Float    @default(5000) // FCFA
   isActive        Boolean  @default(true)
   updatedAt       DateTime @updatedAt
+}
+
+model PushSubscription {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint    String   // URL unique du service push (FCM, Mozilla, Apple…)
+  keysP256dh  String   // clé publique ECDH du client
+  keysAuth    String   // secret d'authentification du client
+  userAgent   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, endpoint]) // un utilisateur ne peut pas s'abonner 2x au même endpoint
 }

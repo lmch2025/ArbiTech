@@ -34,7 +34,7 @@ Plateforme SaaS (PWA) qui détecte et centralise les opportunités d'arbitrage c
 | Auth | Sessions en DB (cookie httpOnly, hashing scrypt) |
 | Temps réel | Polling REST optimisé (4s Pro / 15s Découverte) + cron Vercel cache warming |
 | Thème | next-themes (dark/light) |
-| Notifications | Web Push API + Service Worker |
+| Notifications | Web Push (VAPID) + Service Worker — push serveur réel via `web-push` |
 | icônes | Lucide React |
 | Animations | Framer Motion + CSS custom |
 
