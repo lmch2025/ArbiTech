@@ -1,0 +1,179 @@
+// ArbiTech - SaaS d'Arbitrage Crypto
+// learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  name          String?
+  phone         String?
+  passwordHash  String
+  role          String         @default("USER") // USER | ADMIN
+  status        String         @default("ACTIVE") // ACTIVE | BANNED | PENDING
+  planId        String?
+  plan          Plan?          @relation(fields: [planId], references: [id])
+  referralCode  String         @unique
+  referredById  String?
+  referredBy    User?          @relation("Referrals", fields: [referredById], references: [id])
+  referrals     User[]         @relation("Referrals")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  subscription  Subscription?
+  earnings      AmbassadorEarning[] @relation("Earner")
+  payouts       AmbassadorEarning[] @relation("Referrer")
+  notifications Notification[]
+  sessions      Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Plan {
+  id              String         @id @default(cuid())
+  code            String         @unique // DECOUVERTE | PRO | INSTITUTIONNEL
+  name            String
+  tagline         String
+  description     String
+  priceMonthly    Float          // FCFA
+  priceYearly     Float          // FCFA
+  delaySeconds    Int            @default(0) // délai d'affichage (0 = temps réel)
+  isRealTime      Boolean        @default(false)
+  hasP2PFiat      Boolean        @default(false)
+  hasPush         Boolean        @default(false)
+  hasVolume       Boolean        @default(false)
+  hasVipSupport   Boolean        @default(false)
+  hasAllPairs     Boolean        @default(false)
+  features        String         @default("[]") // JSON array of feature strings
+  accentColor     String         @default("violet")
+  isPopular       Boolean        @default(false)
+  isActive        Boolean        @default(true)
+  sortOrder       Int            @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  users           User[]
+  subscriptions   Subscription[]
+}
+
+model Subscription {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId       String
+  plan         Plan     @relation(fields: [planId], references: [id])
+  status       String   @default("ACTIVE") // ACTIVE | EXPIRED | CANCELLED | PENDING
+  billingCycle String   @default("MONTHLY") // MONTHLY | YEARLY
+  amount       Float
+  startDate    DateTime @default(now())
+  endDate      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Platform {
+  id          String   @id @default(cuid())
+  code        String   @unique // BINANCE | BYBIT | OKX | KUCOIN
+  name        String
+  logo        String
+  color       String   @default("violet")
+  url         String
+  isActive    Boolean  @default(true)
+  status      String   @default("ONLINE") // ONLINE | DEGRADED | OFFLINE | BLOCKED
+  lastSyncAt  DateTime?
+  latencyMs   Int      @default(0)
+  successRate Float    @default(100)
+  pairsCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  buyOps      Opportunity[] @relation("BuyOps")
+  sellOps     Opportunity[] @relation("SellOps")
+  scraperLogs ScraperLog[]
+}
+
+model Opportunity {
+  id            String   @id @default(cuid())
+  pair          String // ex: USDT/FCFA, BTC/USDT
+  baseAsset     String // USDT, BTC
+  quoteAsset    String // FCFA, USDT
+  buyPlatformId String
+  buyPlatform   Platform @relation("BuyOps", fields: [buyPlatformId], references: [id])
+  sellPlatformId String
+  sellPlatform  Platform @relation("SellOps", fields: [sellPlatformId], references: [id])
+  buyPrice      Float
+  sellPrice     Float
+  profitPercent Float
+  profitAmount  Float    // profit par unité
+  volume        Float    @default(0) // volume dispo (plan institutionnel)
+  type          String   @default("SPOT") // SPOT | P2P
+  requiresPlan  String   @default("DECOUVERTE") // plan minimum requis
+  confidence    Float    @default(0.8) // 0..1
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime
+}
+
+model ShareText {
+  id        String   @id @default(cuid())
+  text      String
+  category  String   @default("EMOTIONAL") // EMOTIONAL | FOMO | FINANCIAL | SIMPLE
+  channel   String   @default("ALL") // ALL | WHATSAPP | TELEGRAM | TWITTER
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model AmbassadorEarning {
+  id            String   @id @default(cuid())
+  referrerId    String
+  referrer      User     @relation("Referrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredId    String
+  referred      User     @relation("Earner", fields: [referredId], references: [id], onDelete: Cascade)
+  amount        Float    // commission FCFA
+  status        String   @default("PENDING") // PENDING | PAID | CANCELLED
+  createdAt     DateTime @default(now())
+  paidAt        DateTime?
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  type      String   @default("OPPORTUNITY") // OPPORTUNITY | SYSTEM | SUBSCRIPTION
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model ScraperLog {
+  id         String   @id @default(cuid())
+  platformId String
+  platform   Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  status     String   // SUCCESS | ERROR | BLOCKED
+  message    String?
+  durationMs Int      @default(0)
+  createdAt  DateTime @default(now())
+}
+
+model AmbassadorConfig {
+  id              String   @id @default(cuid())
+  commissionType  String   @default("PERCENT") // PERCENT | FIXED
+  commissionValue Float    @default(20) // 20% ou montant fixe FCFA
+  minPayout       Float    @default(5000) // FCFA
+  isActive        Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
+}

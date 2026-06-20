@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hors ligne — ArbiTech</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, sans-serif;
+        background: radial-gradient(circle at 30% 20%, #2d1b4e, #1a1426 60%);
+        color: #f5f1ff;
+        text-align: center;
+        padding: 2rem;
+      }
+      .card {
+        max-width: 460px;
+        padding: 2.5rem;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 24px;
+        backdrop-filter: blur(20px);
+      }
+      h1 {
+        margin: 0.5rem 0;
+        font-size: 1.6rem;
+        background: linear-gradient(120deg, #a78bfa, #f0abfc, #5eead4);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      p { opacity: 0.8; line-height: 1.6; }
+      .pulse {
+        width: 14px; height: 14px; border-radius: 50%;
+        background: #a78bfa; margin: 0 auto 1rem;
+        animation: pulse 1.6s infinite;
+      }
+      @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="pulse"></div>
+      <h1>Vous êtes hors ligne</h1>
+      <p>ArbiTech récupère les opportunités en temps réel. Reconnectez-vous à Internet pour reprendre la chasse aux profits.</p>
+    </div>
+  </body>
+</html>
