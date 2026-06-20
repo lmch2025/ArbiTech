@@ -254,3 +254,35 @@ Stage Summary:
 - Prêt pour Vercel : vercel.json (cron + build), Prisma PostgreSQL, postinstall prisma generate.
 - Sécurité : aucun secret dans le repo (.env et db/custom.db untrackés), token GitHub retiré de la config git après push.
 - Prochaines étapes utilisateur : (1) importer le repo sur Vercel, (2) créer un projet Neon et récupérer DATABASE_URL + DIRECT_URL, (3) configurer les env vars Vercel, (4) déployer, (5) lancer db:push + seed contre Neon, (6) configurer le cron secret.
+
+---
+Task ID: OPTION-B
+Agent: orchestrator (Z.ai Code)
+Task: Remplacer le WebSocket par un polling REST pur (Option B — plus simple, serverless-friendly, 100% gratuit).
+
+Work Log:
+- Retiré l'import `socket.io-client` du dashboard.
+- Remplacé tout le bloc WebSocket (useEffect io/connect/snapshot/opportunity) par un polling REST propre :
+  - `loadFromAPI` est maintenant la SEULE source de données
+  - Polling toutes les 4s (plan Pro+, temps réel) ou 15s (Découverte)
+  - Re-fetch immédiat quand les filtres changent (useEffect dédié)
+  - Détection des opportunités chaudes NOUVELLES via `seenIdsRef` (Set d'IDs vus) pour déclencher toast + Web Push uniquement sur les nouvelles (pas à chaque poll)
+  - Plafond mémoire des IDs vus (200 max, garde les 100 plus récents)
+- Remplacé l'état `connected` (WebSocket) par `polling` (booléen REST).
+- Mis à jour le badge de statut : "Live · 4s" (Pro) ou "Retard 5min" (Découverte) au lieu de "Temps réel"/"Reconnexion…".
+- Supprimé la fonction helper `mergeOps` (n'est plus nécessaire sans fusion WS+REST).
+- Désinstallé le package `socket.io-client` (1 dépendance en moins).
+- Mis à jour le README :
+  - Stack : "Polling REST optimisé (4s Pro / 15s Découverte) + cron Vercel cache warming"
+  - Section "Temps réel (déjà inclus, sans service séparé)" remplace l'étape 6 (déploiement mini-service)
+  - Dev local : retiré l'étape 5 (démarrer le mini-service)
+  - Note : le code du mini-service est conservé pour référence mais non utilisé par défaut
+- Vérifié via Agent Browser : login demo → dashboard affiche "Live · 4s", "5 opportunités live · 16 simulées", 21 opportunités, polling confirmé (requêtes /api/opportunities répétées toutes les 4s), aucune erreur console.
+- Lint clean.
+- Commit + push GitHub (f619d8f).
+
+Stage Summary:
+- WebSocket éliminé : 1 seule source de données (REST), 1 seul service à déployer (Vercel).
+- Le cron Vercel warm-cache chauffe le cache chaque minute → chaque poll du dashboard lit le cache → zéro latence API externe.
+- Détection des opportunités chaudes préservée (toast + Web Push) via suivi des IDs vus.
+- Plus simple, plus fiable, 100% gratuit sur Vercel (pas besoin de Render/Railway/Fly.io).
