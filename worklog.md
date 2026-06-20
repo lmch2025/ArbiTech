@@ -286,3 +286,44 @@ Stage Summary:
 - Le cron Vercel warm-cache chauffe le cache chaque minute → chaque poll du dashboard lit le cache → zéro latence API externe.
 - Détection des opportunités chaudes préservée (toast + Web Push) via suivi des IDs vus.
 - Plus simple, plus fiable, 100% gratuit sur Vercel (pas besoin de Render/Railway/Fly.io).
+
+---
+Task ID: VAPID
+Agent: orchestrator (Z.ai Code)
+Task: Générer les clés VAPID et implémenter les notifications Web Push fonctionnelles (dernière fonctionnalité simulée).
+
+Work Log:
+- Installé le package `web-push` (standard de l'industrie pour push serveur).
+- Généré les clés VAPID via `webpush.generateVAPIDKeys()` :
+  - Public:  BJnOPQboxr_F2Lfa60sj9kvQSRZHvfFbdEJ4qeTA7o42iQMQhmSac-4YagoP8fd1dYPlqBsUWtBiPUDQr8m6WKU
+  - Privée:  k0ex-zz72XLLjEbrWn-vxFGT7tYnMDCKXyiqoNwCai0
+- Ajouté les clés au .env local (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_SUBJECT).
+- Ajouté le modèle PushSubscription au schéma Prisma (endpoint, keysP256dh, keysAuth, userAgent, @@unique([userId, endpoint])).
+- Poussé le schéma vers la DB SQLite locale (test), restauré postgresql pour le commit.
+- Créé src/lib/web-push-server.ts : initWebPush (setVapidDetails), sendPushToOne (gère 404/410 = expired), broadcastPush (Promise.all + collecte expiredEndpoints).
+- Créé 3 routes API :
+  - GET /api/notifications/vapid-public : renvoie la clé publique au client
+  - POST /api/notifications/subscribe : upsert l'abonnement (userId + endpoint unique)
+  - POST /api/notifications/unsubscribe : supprime l'abonnement
+- Réécrit le hook use-notifications :
+  - enablePush() : demande permission → fetch vapid-public → urlBase64ToUint8Array → PushManager.subscribe(applicationServerKey) → POST /subscribe
+  - disablePush() : getSubscription() → unsubscribe() → POST /unsubscribe
+  - Helper urlBase64ToUint8Array (conversion base64url → ArrayBuffer)
+  - `supported` inclut maintenant `PushManager in window`
+- Réécrit le cron /api/cron/warm-cache :
+  - Récupère les opportunités réelles (computeRealOpportunities)
+  - Détecte les opportunités chaudes NOUVELLES (≥3%, IDs pas déjà notifiés) via Set en mémoire
+  - broadcastPush à tous les PushSubscription en DB
+  - Supprime automatiquement les abonnements expirés (404/410 du service push)
+  - Gère gracieusement l'absence de VAPID ou d'abonnés (ne casse pas le cron)
+- Supprimé l'ancienne route /api/notifications/register-push (redondante avec /subscribe).
+- Mis à jour .env.example avec les clés VAPID + instructions de génération.
+- Mis à jour README stack : "Web Push (VAPID) + Service Worker — push serveur réel via web-push".
+- Testé : route vapid-public renvoie la clé, endpoint /subscribe stocke en DB (vérifié), cron warm-cache détecte 1 hotNewOps et gère l'absence d'abonnés, dashboard charge sans erreur.
+- Lint clean, commit d926546, push GitHub.
+
+Stage Summary:
+- Web Push 100% fonctionnel côté serveur : VAPID généré, abonnements stockés en DB, push broadcast par le cron.
+- Flux complet : user active push → permission → PushManager.subscribe(VAPID) → POST /subscribe → DB. Cron warm-cache → opportunidé chaude → broadcastPush → notification native sur le téléphone/ordinateur.
+- Auto-nettoyage des abonnements expirés (404/410).
+- Pour la prod Vercel : il suffit de configurer les 4 env vars VAPID dans Vercel. Les clés de démo sont dans .env.example (l'utilisateur doit régénérer ses propres clés pour la prod).
