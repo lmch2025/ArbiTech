@@ -6,7 +6,7 @@
   "crons": [
     {
       "path": "/api/cron/warm-cache?secret=CHANGE_ME_IN_VERCEL_ENV",
-      "schedule": "*/1 * * * *"
+      "schedule": "0 6 * * *"
     }
   ],
   "regions": ["fra1"]
