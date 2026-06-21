@@ -61,7 +61,8 @@ export function OpportunityDetailModal({ op, open, onOpenChange, onUpgrade, onTo
       if (!op) return;
       setAdsLoading(true); setAdsError(null);
       try {
-        const base = op.baseAsset; const fiat = op.quoteAsset;
+        const base = op.baseAsset;
+        const fiat = op.quoteAsset === "FCFA" ? "XAF" : op.quoteAsset;
         const [buyRes, sellRes] = await Promise.all([
           fetch(`/api/opportunities/p2p-advertisers?asset=${encodeURIComponent(base)}&fiat=${encodeURIComponent(fiat)}&type=BUY`),
           fetch(`/api/opportunities/p2p-advertisers?asset=${encodeURIComponent(base)}&fiat=${encodeURIComponent(fiat)}&type=SELL`),

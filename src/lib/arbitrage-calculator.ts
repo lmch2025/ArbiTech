@@ -126,9 +126,10 @@ function computeP2PArbitrage(snapshot: MarketSnapshot, now: Date): RealOpportuni
   // Volume disponible réel
   const volume = Math.min(buyQuote.availableVolume, sellQuote.availableVolume, 5000);
 
-  // P2P FCFA = opportunité premium, réservée au plan Pro+
+  // P2P FCFA = accessible au plan Pro (qui a hasP2PFiat = true)
+  // Le plan Institutionnel n'est requis que pour les spreads exceptionnels (>10%)
   let requiresPlan: RealOpportunity["requiresPlan"] = "PRO";
-  if (profitPercent > 5) requiresPlan = "INSTITUTIONNEL";
+  if (profitPercent > 10) requiresPlan = "INSTITUTIONNEL";
 
   ops.push({
     id: `p2p_USDT_XAF_${now.getTime()}`,

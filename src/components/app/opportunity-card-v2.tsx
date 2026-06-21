@@ -301,8 +301,8 @@ export function OpportunityCardV2({
           </div>
         </div>
 
-        {/* Après frais réseau */}
-        {!isLocked && (
+        {/* Après frais réseau — seulement si positif, sinon message discret */}
+        {!isLocked && netPercent > 0 && (
           <div className="rounded-xl bg-amber-500/8 border border-amber-500/20 p-3 mb-2">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">

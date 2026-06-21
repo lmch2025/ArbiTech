@@ -29,7 +29,8 @@ function pick<T>(arr: readonly T[]): T {
 }
 
 const QUOTE_ASSETS = ["FCFA", "USDT"] as const;
-const P2P_ASSETS = ["USDT", "USDC"];
+// Seul USDT a un vrai marché P2P FCFA sur Binance (USDC/XAF n'existe pas)
+const P2P_ASSETS = ["USDT"];
 
 /**
  * Génère une opportunité d'arbitrage réaliste.
