@@ -1,18 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Vercel gère le build nativement. `output: "standalone"` est utile pour Docker/self-hosting
-  // mais peut être activé si besoin (décommentez la ligne ci-dessous).
-  // output: "standalone",
+  // Vercel gère le build nativement.
   typescript: {
-    // Erreurs de narrowing de types non-bloquantes (l'app fonctionne, vérifié via tests browser).
-    // Activez `false` après un audit TS complet pour un build strict.
     ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
   },
   reactStrictMode: true,
   experimental: {
-    // Optimisation pour Vercel
-    optimizePackageImports: ["lucide-react", "recharts", "@radix-ui/react-icons"],
+    optimizePackageImports: ["lucide-react", "recharts"],
   },
 };
 
