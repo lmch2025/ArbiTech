@@ -37,6 +37,7 @@ type OpportunityCardV2Props = {
   onUpgrade?: (op: EnrichedOpportunity) => void;
   onToggleFavorite?: (fingerprint: string) => void;
   onClick?: () => void;
+  highlight?: boolean;
 };
 
 // Frais de réseau estimés par actif (par unité transférée)
@@ -70,6 +71,7 @@ export function OpportunityCardV2({
   onUpgrade,
   onToggleFavorite,
   onClick,
+  highlight,
 }: OpportunityCardV2Props) {
   const [expanded, setExpanded] = useState(false);
 
@@ -115,10 +117,12 @@ export function OpportunityCardV2({
         isExpired
           ? "opacity-40 scale-95"
           : isNew
-            ? "glass-strong gradient-border glow-soft animate-scale-in"
+            ? "glass-strong gradient-border glow-soft animate-scale-in cursor-pointer"
             : isLocked
               ? "glass"
-              : "glass hover:glass-strong hover:-translate-y-0.5 cursor-pointer"
+              : highlight
+                ? "glass-strong gradient-border glow-soft hover:-translate-y-0.5 cursor-pointer"
+                : "glass hover:glass-strong hover:-translate-y-0.5 cursor-pointer"
       }`}
       onClick={() => {
         if (!isLocked && !isExpired && onClick) onClick();

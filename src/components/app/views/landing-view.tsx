@@ -31,7 +31,8 @@ import {
   ChefHat,
   Target,
 } from "lucide-react";
-import { OpportunityCard } from "@/components/app/opportunity-card";
+import { OpportunityCardV2 } from "@/components/app/opportunity-card-v2";
+import { OpportunityDetailModal } from "@/components/app/opportunity-detail-modal";
 import { PriceTicker } from "@/components/app/price-ticker";
 import { formatFcfa, formatPercent } from "@/lib/format";
 import type { Opportunity } from "@/lib/types";
@@ -72,6 +73,21 @@ export function LandingView({ initialOpportunities = [] }: { initialOpportunitie
       })
       .catch(() => {});
   }, [initialOpportunities.length]);
+
+  // Detail modal state (clic sur carte → ouvre détail)
+  const [detailOp, setDetailOp] = useState<Opportunity | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  // Enrichit les opportunités pour OpportunityCardV2 (ajoute fingerprint, isNew, etc.)
+  const enrichedOps = previewOps.map((op) => ({
+    ...op,
+    fingerprint: `${op.type}:${op.pair}:${op.buyPlatformCode}:${op.sellPlatformCode}`,
+    firstSeenAt: Date.now(),
+    isNew: false,
+    isExpiring: new Date(op.expiresAt).getTime() - Date.now() < 30000,
+    isExpired: false,
+    isFavorite: false,
+  }));
 
   const startFree = () => {
     if (user) setView("dashboard");
@@ -161,8 +177,13 @@ export function LandingView({ initialOpportunities = [] }: { initialOpportunitie
                       <div key={i} className="h-24 rounded-2xl shimmer bg-muted/30" />
                     ))
                   ) : (
-                    previewOps.slice(0, 4).map((op) => (
-                      <OpportunityCard key={op.id} op={op} />
+                    enrichedOps.slice(0, 4).map((op, i) => (
+                      <OpportunityCardV2
+                        key={`${op.fingerprint}-${i}`}
+                        op={op}
+                        onClick={() => { setDetailOp(op); setDetailOpen(true); }}
+                        onUpgrade={startFree}
+                      />
                     ))
                   )}
                 </div>
@@ -285,8 +306,14 @@ export function LandingView({ initialOpportunities = [] }: { initialOpportunitie
             {previewOps.length === 0 ? (
               [0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="h-44 rounded-2xl shimmer bg-muted/30" />)
             ) : (
-              previewOps.slice(0, 6).map((op, i) => (
-                <OpportunityCard key={op.id} op={op} highlight={i === 0} />
+              enrichedOps.slice(0, 6).map((op, i) => (
+                <OpportunityCardV2
+                  key={`${op.fingerprint}-${i}`}
+                  op={op}
+                  highlight={i === 0}
+                  onClick={() => { setDetailOp(op); setDetailOpen(true); }}
+                  onUpgrade={startFree}
+                />
               ))
             )}
           </div>
@@ -483,6 +510,14 @@ export function LandingView({ initialOpportunities = [] }: { initialOpportunitie
           </div>
         </div>
       </section>
+
+      {/* Opportunity detail modal (clic sur carte) */}
+      <OpportunityDetailModal
+        op={detailOp as any}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        onUpgrade={startFree}
+      />
     </div>
   );
 }
