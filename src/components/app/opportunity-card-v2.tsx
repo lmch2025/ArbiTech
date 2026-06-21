@@ -36,7 +36,7 @@ type OpportunityCardV2Props = {
   op: EnrichedOpportunity;
   onUpgrade?: (op: EnrichedOpportunity) => void;
   onToggleFavorite?: (fingerprint: string) => void;
-  onClick?: (op: EnrichedOpportunity) => void;
+  onClick?: () => void;
 };
 
 // Frais de réseau estimés par actif (par unité transférée)
@@ -121,14 +121,14 @@ export function OpportunityCardV2({
               : "glass hover:glass-strong hover:-translate-y-0.5 cursor-pointer"
       }`}
       onClick={() => {
-        if (!isLocked && !isExpired && onClick) onClick(op);
+        if (!isLocked && !isExpired && onClick) onClick();
       }}
       role={isLocked || isExpired ? undefined : "button"}
       tabIndex={isLocked || isExpired ? -1 : 0}
       onKeyDown={(e) => {
         if ((e.key === "Enter" || e.key === " ") && !isLocked && !isExpired && onClick) {
           e.preventDefault();
-          onClick(op);
+          onClick();
         }
       }}
       aria-label={`Opportunité ${op.pair} ${formatPercent(profit)}`}
