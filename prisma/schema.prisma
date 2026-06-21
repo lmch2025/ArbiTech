@@ -26,6 +26,14 @@ model User {
   referredById  String?
   referredBy    User?          @relation("Referrals", fields: [referredById], references: [id])
   referrals     User[]         @relation("Referrals")
+
+  // Quota d'opportunités vues par jour (plan gratuit)
+  dailyViewsCount       Int        @default(0)
+  dailyViewsDate        DateTime?
+  dailySeenFingerprints String     @default("[]")
+
+  // Historique des opportunités consultées
+  viewedOpportunities   OpportunityView[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
@@ -62,6 +70,7 @@ model Plan {
   hasVipSupport   Boolean        @default(false)
   hasAllPairs     Boolean        @default(false)
   features        String         @default("[]") // JSON array of feature strings
+  dailyOpportunityLimit Int      @default(0) // 0 = illimité
   accentColor     String         @default("violet")
   isPopular       Boolean        @default(false)
   isActive        Boolean        @default(true)
@@ -193,4 +202,40 @@ model PushSubscription {
   updatedAt   DateTime @updatedAt
 
   @@unique([userId, endpoint]) // un utilisateur ne peut pas s'abonner 2x au même endpoint
+}
+
+// Cache key-value persistant (survit aux cold starts serverless sur Vercel Hobby).
+model CacheEntry {
+  key       String   @id
+  value     String   // JSON sérialisé
+  updatedAt DateTime @updatedAt
+}
+
+// Historique des opportunités consultées par l'utilisateur (onglet Historique).
+model OpportunityView {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fingerprint     String   // "TYPE:PAIR:BUY:SELL"
+  pair            String
+  baseAsset       String
+  quoteAsset      String
+  type            String   // SPOT | P2P
+  buyPlatformCode String
+  sellPlatformCode String
+  buyPlatformName String
+  sellPlatformName String
+  buyPlatformColor String
+  sellPlatformColor String
+  buyPlatformLogo String
+  sellPlatformLogo String
+  buyPrice        Float
+  sellPrice       Float
+  profitPercent   Float
+  profitAmount    Float
+  confidence      Float
+  viewedAt        DateTime @default(now())
+
+  @@unique([userId, fingerprint])
+  @@index([userId, viewedAt])
 }

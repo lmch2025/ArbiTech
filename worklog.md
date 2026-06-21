@@ -327,3 +327,75 @@ Stage Summary:
 - Flux complet : user active push → permission → PushManager.subscribe(VAPID) → POST /subscribe → DB. Cron warm-cache → opportunidé chaude → broadcastPush → notification native sur le téléphone/ordinateur.
 - Auto-nettoyage des abonnements expirés (404/410).
 - Pour la prod Vercel : il suffit de configurer les 4 env vars VAPID dans Vercel. Les clés de démo sont dans .env.example (l'utilisateur doit régénérer ses propres clés pour la prod).
+
+---
+Task ID: RECOVER
+Agent: general-purpose
+Task: Recreate 5 lost files implementing the opportunity display system (opportunity-card-v2.tsx, opportunity-detail-modal.tsx, api/setup-db/route.ts, api/opportunities/history/route.ts, api/opportunities/p2p-advertisers/route.ts).
+
+Work Log:
+- Read `worklog.md` (full), `lib/types.ts`, `lib/format.ts`, `lib/db.ts`, `lib/auth.ts`, `lib/http.ts`, `lib/constants.ts`, `lib/opportunity-service.ts`, `lib/exchange-fetcher.ts`, `lib/arbitrage-calculator.ts`, `prisma/schema.prisma`, `prisma/seed.ts`, `neon-init.sql`, `app/globals.css`, existing `opportunity-card.tsx`, `time-text.tsx`, `dashboard-view.tsx`, shadcn UI primitives (dialog, badge, button, input, label, progress, checkbox), eslint config, tsconfig, and existing opportunities route + cron warm-cache route to align with conventions.
+- Wrote 5 files (total ~1500 lines), strictly conforming to the Aurora/Amethyst design system (violet/fuchsia/teal/emerald/amber/rose, glass/glass-strong/gradient-border/glow-soft/animate-scale-in/animate-fade-in) and the project's French tone.
+
+Files created:
+
+1. `src/components/app/opportunity-card-v2.tsx` (~490 lines) — `"use client"` React component with `EnrichedOpportunity` type (Opportunity + fingerprint/firstSeenAt/isNew/isExpiring/isExpired/isFavorite). Props: `{ op, onUpgrade?, onToggleFavorite?, onClick? }`.
+   - Header: pair + type badge (P2P/Spot) + 🔥 Chaud badge (profit ≥ 3) + NEW badge (if isNew) + Live badge (if realData) + Verrouillée badge (if locked) + favorite star button (top right, fill-amber when favorite).
+   - Body: "Achetez ici" → arrow → "Vendez là-bas" with platform logo tiles (background color from op.buyPlatform.color/sellPlatform.color), prices via formatPrice (BLURRED with `blur-[6px]` + `••••••` mask when locked). Locked overlay with CTA "Où acheter ? Où vendre ?" + "Débloquer" button → calls onUpgrade(op).
+   - Profit brut tile: % via formatPercent + estimated FCFA via formatFcfa (compact over 100k).
+   - "Après frais réseau" tile: network fees per asset (USDT=1, USDC=1, BTC=0.0001, ETH=0.002, BNB=0.001, SOL=0.01, TRX=1), computes net % and net FCFA.
+   - Footer: Fiabilité (confidence*100 %) + Volume (formatPrice + baseAsset) + countdown via TimeText/timeUntil.
+   - Expandable "Détails" section with 4-step guide (Achetez ici → Transférez → Vendez là-bas → Encaissez), each step with gradient icon tile + links to platform URLs (BINANCE=https://www.binance.com, BYBIT=https://www.bybit.com, OKX=https://www.okx.com, KUCOIN=https://www.kucoin.com).
+   - Visual states: isExpired → opacity-40 + scale-95 ; isNew → glass-strong + gradient-border + glow-soft + animate-scale-in ; isLocked → blur + overlay CTA. Keyboard accessible (role=button, Enter/Space triggers onClick).
+
+2. `src/components/app/opportunity-detail-modal.tsx` (~650 lines) — `"use client"` Dialog-based modal. Props: `{ op, open, onOpenChange, onUpgrade?, onToggleFavorite? }`.
+   - Title bar: pair + type/hot/live badges + favorite star.
+   - Section 1 Stratégie d'exécution: buy tile + arrow + sell tile, each with platform logo, price, and "Ouvrir [platform]" button (ExternalLink) linking to platform URLs ; middle "2. Transférez" tile with network fee hint.
+   - Section 2 Calculateur de profit: Input for capital (default 100000 FCFA), quick amount buttons (50k/100k/500k/1M), 6 CalcRow tiles (quantité achetée, frais réseau, quantité après frais, montant après vente, profit net, ROI%) with emerald/amber/rose tone highlighting, Progress bar showing ROI%.
+   - Section 3 Annonceurs P2P (only if op.type === "P2P"): fetches both `/api/opportunities/p2p-advertisers?asset=X&fiat=Y&type=BUY` and `type=SELL` in parallel, shows two-column list (emerald/fuchsia) of advertiser name + price FCFA + volume + orders + completion % + trade methods badges. Loading + error states handled.
+   - Section 4 Checklist d'exécution: 6 interactive checkboxes (Circle → CheckCircle2) with line-through when checked, completion count badge.
+   - Section 5 Info tiles: Fiabilité (Activity icon), Volume (Zap), Profit brut (TrendingUp) in 3-column grid.
+   - Footer: "Retour à la liste" (ghost button, calls onOpenChange(false)) + "Aller à [platform]" (gradient button, opens sell platform URL).
+   - State resets on close (checklist + advertisers). Network fees table identical to card.
+
+3. `src/app/api/setup-db/route.ts` (~160 lines) — GET route that initializes the Neon Postgres database.
+   - `import { Pool } from "pg"` + `readFileSync` + `join` from "fs"/"path".
+   - `export const dynamic = "force-dynamic"; maxDuration = 60`.
+   - Reads `neon-init.sql` from `process.cwd()` (project root).
+   - Requires `?confirm=yes` query param (otherwise 400 with hint).
+   - Connection: prefers `DIRECT_URL`, falls back to `DATABASE_URL`, optional `PGSSL=true` for SSL.
+   - Drops all 14 tables with CASCADE (PushSubscription, OpportunityView, CacheEntry, ScraperLog, AmbassadorEarning, AmbassadorConfig, Notification, Subscription, Opportunity, ShareText, Platform, Session, Plan, User) in one batched query.
+   - Splits the init SQL on `;\n`, executes each statement sequentially, logs individual statement failures but continues.
+   - Returns JSON: `{ ok, message, tablesCreated, tableNames, rowCount, droppedTables }`.
+   - NOTE: requires the `pg` npm package to be installed (currently NOT in package.json — pre-existing dependency gap, out of scope per "do not modify other files" instruction). Lint passes (eslint does not resolve modules).
+
+4. `src/app/api/opportunities/history/route.ts` (~65 lines) — GET route, paginated, requires auth.
+   - `import { db } from "@/lib/db"; getCurrentUser from "@/lib/auth"; ok/unauthorized/handleErr from "@/lib/http"`.
+   - Reads `page` (default 1) + `pageSize` (default 6, max 50) query params.
+   - Uses `(db as any).opportunityView.findMany({ where: { userId }, orderBy: { viewedAt: "desc" }, skip, take })` + parallel `count`.
+   - Returns `{ items, pagination: { page, pageSize, total, totalPages, hasNext, hasPrev } }`.
+   - NOTE: requires the `OpportunityView` model to be added to `prisma/schema.prisma` (out of scope per "do not modify other files"). Uses `(db as any)` cast to avoid blocking TypeScript.
+
+5. `src/app/api/opportunities/p2p-advertisers/route.ts` (~135 lines) — GET route that fetches real Binance P2P advertisers.
+   - Accepts `asset` (default USDT), `fiat` (default XAF), `type` (BUY/SELL, default BUY). Validates type.
+   - POSTs to `https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search` with body `{ fiat, asset, tradeType, page:1, rows:10, payTypes:[] }` and a realistic Chrome User-Agent + fr-FR Accept-Language.
+   - AbortController with 12s timeout.
+   - Maps top 5 advertisers with: `advertiserName` (nickName fallback realName fallback "—"), `price` (parseFloat), `surplusAmount`, `tradeMethods` (array of tradeMethodName/identifier), `completionRate` (clamped 0..1 from 0..100), `orders` (rounded), `rating`.
+   - Returns `{ advertisers, count, filters: { asset, fiat, type }, source: "Binance P2P" }`.
+   - Robust `toNumber` + `clamp01` helpers for malformed numeric fields.
+
+Quality checks:
+- `bun run lint 2>&1 | tail -10` → `$ eslint .` (exit code 0, zero lint errors in any of the 5 new files).
+- `npx tsc --noEmit` reports 1 TS error specific to the new files: `src/app/api/setup-db/route.ts:2:22 — Cannot find module 'pg'`. This is a pre-existing dependency gap (pg not installed in package.json), out of scope per task instructions ("ONLY write these 5 files. Do NOT modify any other files."). All other TS errors are pre-existing in unrelated files (cache.ts, quota.ts, exchange-fetcher.ts, use-notifications.ts, next.config.ts).
+- French throughout, Aurora theme strictly respected (NO indigo/blue).
+- All glass/gradient-border/glow-soft/animate-scale-in/animate-fade-in utilities used as specified.
+- shadcn components: Dialog (+ subparts), Badge, Button, Input, Label, Progress.
+- lucide-react icons used: ArrowRight, TrendingUp, Clock, Lock, Zap, Activity, Star, ChevronDown/Up, Network, ShoppingCart, Send, Coins, Flame, Sparkles, ExternalLink, Loader2, CheckCircle2, Circle.
+- Helpers exported: `EnrichedOpportunity` type from opportunity-card-v2.tsx.
+- Default exports added on both components (OpportunityCardV2, OpportunityDetailModal) for flexibility.
+
+Stage Summary:
+- 5 files recreated, ~1500 lines total, lint clean (exit 0).
+- The opportunity display system is now complete: card v2 (with favoris, isNew/isExpired states, network fee estimation, expandable 4-step guide, locked overlay CTA) + detail modal (5 sections + footer with platform links + P2P advertiser fetching + calculator + checklist + info tiles).
+- API surface: setup-db (DB init via pg + neon-init.sql), opportunities/history (paginated views via Prisma), opportunities/p2p-advertisers (real Binance P2P API proxy).
+- Next actions for the orchestrator: (1) install `pg` package (`bun add pg @types/pg`) so setup-db can actually run on Vercel; (2) add the `OpportunityView` model to `prisma/schema.prisma` (fields: id, userId, opportunityFingerprint, viewedAt, plus relation to User) so history route has a real backing table; (3) wire `OpportunityCardV2` + `OpportunityDetailModal` into `dashboard-view.tsx` (replace existing OpportunityCard usage, pass enriched op data from the polling hook with `fingerprint`, `firstSeenAt`, `isNew`, `isExpiring`, `isExpired`, `isFavorite` computed client-side from `seenIdsRef` + localStorage favorites).

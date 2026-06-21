@@ -13,6 +13,9 @@ CREATE TABLE "User" (
     "planId" TEXT,
     "referralCode" TEXT NOT NULL,
     "referredById" TEXT,
+    "dailyViewsCount" INTEGER NOT NULL DEFAULT 0,
+    "dailyViewsDate" TIMESTAMP(3),
+    "dailySeenFingerprints" TEXT NOT NULL DEFAULT '[]',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -47,6 +50,7 @@ CREATE TABLE "Plan" (
     "hasVipSupport" BOOLEAN NOT NULL DEFAULT false,
     "hasAllPairs" BOOLEAN NOT NULL DEFAULT false,
     "features" TEXT NOT NULL DEFAULT '[]',
+    "dailyOpportunityLimit" INTEGER NOT NULL DEFAULT 0,
     "accentColor" TEXT NOT NULL DEFAULT 'violet',
     "isPopular" BOOLEAN NOT NULL DEFAULT false,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
@@ -191,6 +195,42 @@ CREATE TABLE "PushSubscription" (
     CONSTRAINT "PushSubscription_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "CacheEntry" (
+    "key" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "CacheEntry_pkey" PRIMARY KEY ("key")
+);
+
+-- CreateTable
+CREATE TABLE "OpportunityView" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "fingerprint" TEXT NOT NULL,
+    "pair" TEXT NOT NULL,
+    "baseAsset" TEXT NOT NULL,
+    "quoteAsset" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "buyPlatformCode" TEXT NOT NULL,
+    "sellPlatformCode" TEXT NOT NULL,
+    "buyPlatformName" TEXT NOT NULL,
+    "sellPlatformName" TEXT NOT NULL,
+    "buyPlatformColor" TEXT NOT NULL,
+    "sellPlatformColor" TEXT NOT NULL,
+    "buyPlatformLogo" TEXT NOT NULL,
+    "sellPlatformLogo" TEXT NOT NULL,
+    "buyPrice" DOUBLE PRECISION NOT NULL,
+    "sellPrice" DOUBLE PRECISION NOT NULL,
+    "profitPercent" DOUBLE PRECISION NOT NULL,
+    "profitAmount" DOUBLE PRECISION NOT NULL,
+    "confidence" DOUBLE PRECISION NOT NULL,
+    "viewedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "OpportunityView_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
@@ -211,6 +251,12 @@ CREATE UNIQUE INDEX "Platform_code_key" ON "Platform"("code");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "PushSubscription_userId_endpoint_key" ON "PushSubscription"("userId", "endpoint");
+
+-- CreateIndex
+CREATE INDEX "OpportunityView_userId_viewedAt_idx" ON "OpportunityView"("userId", "viewedAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "OpportunityView_userId_fingerprint_key" ON "OpportunityView"("userId", "fingerprint");
 
 -- AddForeignKey
 ALTER TABLE "User" ADD CONSTRAINT "User_planId_fkey" FOREIGN KEY ("planId") REFERENCES "Plan"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -248,6 +294,9 @@ ALTER TABLE "ScraperLog" ADD CONSTRAINT "ScraperLog_platformId_fkey" FOREIGN KEY
 -- AddForeignKey
 ALTER TABLE "PushSubscription" ADD CONSTRAINT "PushSubscription_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
+-- AddForeignKey
+ALTER TABLE "OpportunityView" ADD CONSTRAINT "OpportunityView_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
 
 -- ===== SEED DATA =====
 
@@ -276,13 +325,13 @@ ON CONFLICT ("id") DO UPDATE SET "commissionType"=EXCLUDED."commissionType","com
 -- Share texts
 INSERT INTO "ShareText" ("id","text","category","channel","isActive","createdAt") VALUES
 ('st_FOMO_ALL','Je viens de découvrir comment repérer les failles du marché crypto automatiquement. Viens voir ça avant que ce soit saturé ! 🚀','FOMO','ALL',true,NOW()),
-('st_EMOTIONAL_WHATSAPP','Frère, j''ai trouvé un outil qui compare les prix USDT sur Binance, Bybit, OKX et KuCoin en temps réel. Tu achètes là où c''est moins cher, tu vends là où c''est plus cher. C''est ça l''arbitrage. Essaye, c''est simple comme une recette de cuisine. 💜','EMOTIONAL','WHATSAPP',true,NOW()),
-('st_SIMPLE_ALL','Tu savais qu''on peut gagner de l''argent avec la crypto SANS prédire les cours ? C''est l''arbitrage : achat ici, vente là-bas, profit net. ArbiTech trouve les opportunités pour toi. Rejoins-moi 👇','SIMPLE','ALL',true,NOW()),
-('st_EMOTIONAL_TELEGRAM','Avant je pensais que la crypto c''était trop complexe. Maintenant je vois des opportunités d''arbitrage USDT/FCFA en temps réel. La vie change vite 😅✨','EMOTIONAL','TELEGRAM',true,NOW()),
-('st_FOMO_TWITTER','🚨 Les pros de la crypto utilisent un secret : l''arbitrage. Acheter bas sur une plateforme, vendre haut sur une autre. ArbiTech automatise TOUT. Suis mon lien et teste gratuitement.','FOMO','TWITTER',true,NOW()),
-('st_FINANCIAL_ALL','Je partage ce que j''utilise pour repérer les opportunités crypto en Afrique. P2P FCFA inclus. Pas besoin d''être expert. 🙏','FINANCIAL','ALL',true,NOW()),
-('st_FOMO_ALL2','On est en 2025. Il existe des outils qui chassent les opportunités crypto POUR toi, 24h/24. Voici celui que j''utilise. Profite, avant que tout le monde le découvre. 🌌','FOMO','ALL',true,NOW()),
-('st_SIMPLE_WHATSAPP','Maîtrise l''arbitrage crypto sans jargon. ArbiTech affiche : Achat ici ➔ Vente là-bas ➔ Profit net. Simple comme une recette 😄','SIMPLE','WHATSAPP',true,NOW())
+('st_EMOTIONAL_WHATSAPP','Frère, j''ai trouvé un outil qui compare les prix USDT sur Binance, Bybit, OKX et KuCoin en temps réel. C''est ça l''arbitrage. Essaye, c''est simple comme une recette. 💜','EMOTIONAL','WHATSAPP',true,NOW()),
+('st_SIMPLE_ALL','Tu savais qu''on peut gagner de l''argent avec la crypto SANS prédire les cours ? C''est l''arbitrage : achat ici, vente là-bas, profit net. ArbiTech trouve les opportunités pour toi. 👇','SIMPLE','ALL',true,NOW()),
+('st_EMOTIONAL_TELEGRAM','Avant je pensais que la crypto c''était trop complexe. Maintenant je vois des opportunités d''arbitrage en temps réel. 😅✨','EMOTIONAL','TELEGRAM',true,NOW()),
+('st_FOMO_TWITTER','🚨 Les pros utilisent un secret : l''arbitrage. Acheter bas, vendre haut. ArbiTech automatise TOUT.','FOMO','TWITTER',true,NOW()),
+('st_FINANCIAL_ALL','Je partage ce que j''utilise pour repérer les opportunités crypto en Afrique. P2P FCFA inclus. 🙏','FINANCIAL','ALL',true,NOW()),
+('st_FOMO_ALL2','On est en 2025. Il existe des outils qui chassent les opportunités crypto POUR toi, 24h/24. 🌌','FOMO','ALL',true,NOW()),
+('st_SIMPLE_WHATSAPP','Maîtrise l''arbitrage crypto sans jargon. ArbiTech : Achat ➔ Vente ➔ Profit net. 😄','SIMPLE','WHATSAPP',true,NOW())
 ON CONFLICT ("id") DO UPDATE SET "text"=EXCLUDED."text";
 
 -- Admin user (password: ArbiTech2025!)
